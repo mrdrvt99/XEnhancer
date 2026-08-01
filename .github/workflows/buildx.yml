@@ -16,7 +16,7 @@ on:
 
       bundle_id:
         description: "Bundle ID (Optional)"
-        default: ""
+        default: "com.atebits.Tweetie2"
         required: false
         type: string
 
