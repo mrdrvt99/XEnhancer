@@ -70,14 +70,6 @@ jobs:
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
           rm -rf appextracted
 
-      - name: Get XEnhancer Version
-        run: |
-          TWEAK_VERSION=$(otool -l resources/XEnhancer.dylib | grep -A 3 LC_ID_DYLIB | awk '/current version/ {print $3}')
-          
-          if [ -z "$TWEAK_VERSION" ]; then TWEAK_VERSION="Unknown"; fi
-          
-          echo "TWEAK_VERSION=$TWEAK_VERSION" >> $GITHUB_ENV
-
       - name: Install Dependencies
         run: brew install make ldid
 
@@ -123,7 +115,7 @@ jobs:
           fi
           
           cyan -i app.ipa \
-            -o "${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}.ipa" \
+            -o "${{ inputs.display_name }}_${{ env.APP_VERSION }}.ipa" \
             -f "$TWEAK_PATH" \
             -n "${{ inputs.display_name }}" \
             -b "${{ steps.resolve.outputs.bundle_id }}"
@@ -138,9 +130,9 @@ jobs:
           done
           gh release create "x-ipa${i}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}" \
+            --title "${{ inputs.display_name }}_${{ env.APP_VERSION }}" \
             --draft \
-            ${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}.ipa
+            ${{ inputs.display_name }}_${{ env.APP_VERSION }}.ipa
 
       - name: Job Summary - Build Complete
         run: echo -e '### 🛠️ Build IPA Complete!' >> $GITHUB_STEP_SUMMARY
