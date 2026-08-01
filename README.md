@@ -1,5 +1,5 @@
 # XEnhancer 1.0.0
-A simple X (Twitter) iOS Tweak made by [@ZeroxDeadBeef]https://t.me/ZeroxDeadBeef
+A simple X (Twitter) iOS Tweak made by [@ZeroxDeadBeef](https://t.me/ZeroxDeadBeef)
 
 The first public release, bringing major improvements to privacy, customization, media, and the overall X experience.
 
