@@ -45,4 +45,4 @@ The first public release, bringing major improvements to privacy, customization,
 
 - Some features may be affected by recent X updates and will be improved in upcoming releases.
 
-- Full changelog in [@ZeroxDeadBeef]https://t.me/ZeroxDeadBeef
+- Full changelog in [@ZeroxDeadBeef](https://t.me/ZeroxDeadBeef)
