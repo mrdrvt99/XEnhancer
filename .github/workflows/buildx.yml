@@ -1,0 +1,150 @@
+name: Build X IPA
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "URL to the decrypted X (Twitter) IPA file"
+        default: ""
+        required: true
+        type: string
+
+      display_name:
+        description: "App Name (Optional)"
+        default: "X"
+        required: true
+        type: string
+
+      bundle_id:
+        description: "Bundle ID (Optional)"
+        default: ""
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Resolve Bundle ID
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.bundle_id }}" ]; then
+            echo "bundle_id=${{ inputs.bundle_id }}" >> $GITHUB_OUTPUT
+          else
+            echo "bundle_id=com.atebits.Tweetie2" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Hide Sensitive Inputs
+        uses: levibostian/action-hide-sensitive-inputs@v1
+        with:
+          exclude_inputs: display_name, bundle_id
+
+      - name: Download and Validate IPA
+        run: |
+          wget "${{ inputs.ipa_url }}" --quiet --no-verbose -O app.ipa
+          file_type=$(file --mime-type -b app.ipa)
+          if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
+            echo "::error::Validation failed: The downloaded file is not a valid IPA. Detected type: $file_type."
+            exit 1
+          fi
+
+      - name: Get App Version
+        run: |
+          unzip -q app.ipa -d appextracted
+          APP_PAYLOAD=$(find appextracted/Payload/ -maxdepth 1 -mindepth 1 -type d | head -n 1)
+          if [[ -z "$APP_PAYLOAD" ]]; then
+            echo "::error::Could not find app bundle in Payload/"
+            exit 1
+          fi
+          VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP_PAYLOAD/Info.plist")
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          rm -rf appextracted
+
+      - name: Get XEnhancer Version
+        run: |
+          TWEAK_VERSION=$(otool -l resources/XEnhancer.dylib | grep -A 3 LC_ID_DYLIB | awk '/current version/ {print $3}')
+          
+          if [ -z "$TWEAK_VERSION" ]; then TWEAK_VERSION="Unknown"; fi
+          
+          echo "TWEAK_VERSION=$TWEAK_VERSION" >> $GITHUB_ENV
+
+      - name: Install Dependencies
+        run: brew install make ldid
+
+      - name: Set PATH Environment Variables
+        run: |
+          echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+          echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
+
+      - name: Cache Theos
+        id: theos_cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-${{ runner.os }}
+
+      - name: Install Theos
+        if: steps.theos_cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --quiet --recursive https://github.com/theos/theos.git $THEOS
+
+      - name: Download iOS SDK
+        if: steps.theos_cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/Tonwalter888/iOS-SDKs.git
+          cd iOS-SDKs
+          git sparse-checkout set --no-cone iPhoneOS18.6.sdk
+          git checkout
+          mv *.sdk $THEOS/sdks
+
+      - name: Install cyan
+        run: |
+          if ! command -v cyan &> /dev/null; then
+            pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          fi
+
+      - name: Inject Into IPA
+        run: |
+          TWEAK_PATH="resources/XEnhancer.dylib"
+          
+          if [[ ! -f "$TWEAK_PATH" ]]; then
+            echo "::error::Tweak file $TWEAK_PATH not found!"
+            exit 1
+          fi
+          
+          cyan -i app.ipa \
+            -o "${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}.ipa" \
+            -f "$TWEAK_PATH" \
+            -n "${{ inputs.display_name }}" \
+            -b "${{ steps.resolve.outputs.bundle_id }}"
+
+      - name: Create a Draft Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          i=1
+          while gh release view "x-ipa${i}" --repo "$GITHUB_REPOSITORY" &>/dev/null; do
+            i=$(( i + 1 ))
+          done
+          gh release create "x-ipa${i}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}" \
+            --draft \
+            ${{ inputs.display_name }}_${{ env.APP_VERSION }}_${{ env.TWEAK_VERSION }}.ipa
+
+      - name: Job Summary - Build Complete
+        run: echo -e '### 🛠️ Build IPA Complete!' >> $GITHUB_STEP_SUMMARY
+
+      - name: Job Summary - Output the Draft Release Link
+        run: |
+          echo -e "### 🚀 Draft Release\n\nDraft release has been created successfully! You can view your release here: https://github.com/${{ github.repository }}/releases" >> $GITHUB_STEP_SUMMARY
