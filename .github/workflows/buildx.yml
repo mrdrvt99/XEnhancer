@@ -1,4 +1,5 @@
 name: Build X IPA
+
 on:
   workflow_dispatch:
     inputs:
@@ -20,6 +21,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -27,31 +31,36 @@ concurrency:
 jobs:
   build:
     name: Build IPA
-    runs-on: macos-latest
+    runs-on: xcode-27
+    timeout-minutes: 30
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v7
-
-      - name: Resolve Bundle ID
-        id: resolve
-        run: |
-          if [ -n "${{ inputs.bundle_id }}" ]; then
-            echo "bundle_id=${{ inputs.bundle_id }}" >> $GITHUB_OUTPUT
-          else
-            echo "bundle_id=com.atebits.Tweetie2" >> $GITHUB_OUTPUT
-          fi
-
       - name: Hide Sensitive Inputs
         uses: levibostian/action-hide-sensitive-inputs@v1
         with:
-          exclude_inputs: display_name, bundle_id
+          exclude_inputs: display_name,bundle_id
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download and Validate IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
         run: |
-          wget "${{ inputs.ipa_url }}" --quiet --no-verbose -O app.ipa
+          download() {
+            rm -f "$2"
+            if wget --quiet --no-verbose --tries=3 --waitretry=2 -O "$2" "$1"; then
+              return 0
+            fi
+            echo "::warning::wget failed for $2, retrying with curl"
+            rm -f "$2"
+            curl --fail --location --silent --show-error --retry 3 --retry-delay 2 -o "$2" "$1"
+          }
+          download "$IPA_URL" app.ipa
           file_type=$(file --mime-type -b app.ipa)
           if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
             echo "::error::Validation failed: The downloaded file is not a valid IPA. Detected type: $file_type."
@@ -60,44 +69,21 @@ jobs:
 
       - name: Get App Version
         run: |
-          unzip -q app.ipa -d appextracted
-          APP_PAYLOAD=$(find appextracted/Payload/ -maxdepth 1 -mindepth 1 -type d | head -n 1)
-          if [[ -z "$APP_PAYLOAD" ]]; then
+          plist_entry="$(unzip -Z1 app.ipa | grep -m1 -E '^Payload/[^/]+\.app/Info\.plist$' || true)"
+          if [[ -z "$plist_entry" ]]; then
             echo "::error::Could not find app bundle in Payload/"
             exit 1
           fi
-          VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP_PAYLOAD/Info.plist")
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-          rm -rf appextracted
-
-      - name: Install Dependencies
-        run: brew install make ldid
-
-      - name: Set PATH Environment Variables
-        run: |
-          echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
-          echo "THEOS=${{ github.workspace }}/theos" >> $GITHUB_ENV
-
-      - name: Cache Theos
-        id: theos_cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}
-
-      - name: Install Theos
-        if: steps.theos_cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --quiet --recursive https://github.com/theos/theos.git $THEOS
-
-      - name: Download iOS SDK
-        if: steps.theos_cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/Tonwalter888/iOS-SDKs.git
-          cd iOS-SDKs
-          git sparse-checkout set --no-cone iPhoneOS18.6.sdk
-          git checkout
-          mv *.sdk $THEOS/sdks
+          plist_dir="$RUNNER_TEMP/appplist"
+          mkdir -p "$plist_dir"
+          unzip -q -j -o app.ipa "$plist_entry" -d "$plist_dir"
+          version="$(plutil -extract CFBundleShortVersionString raw -o - "$plist_dir/Info.plist" | tr -d '\r\n' | tr -c 'A-Za-z0-9._+~-' '_')"
+          rm -rf "$plist_dir"
+          if [[ -z "$version" ]]; then
+            echo "::error::Could not read CFBundleShortVersionString from the IPA's Info.plist"
+            exit 1
+          fi
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Install cyan
         run: |
@@ -106,23 +92,37 @@ jobs:
           fi
 
       - name: Inject Into IPA
+        env:
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          BUNDLE_ID_INPUT: ${{ inputs.bundle_id }}
         run: |
           TWEAK_PATH="resources/XEnhancer.dylib"
-          
+
           if [[ ! -f "$TWEAK_PATH" ]]; then
             echo "::error::Tweak file $TWEAK_PATH not found!"
             exit 1
           fi
-          
+
+          bundle_id="${BUNDLE_ID_INPUT:-com.atebits.Tweetie2}"
+
+          safe_name="$(printf '%s' "$DISPLAY_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
+          if [[ -z "$safe_name" ]]; then
+            safe_name="X"
+          fi
+          ipa_name="${safe_name}_${APP_VERSION}.ipa"
+
           cyan -i app.ipa \
-            -o "${{ inputs.display_name }}_${{ env.APP_VERSION }}.ipa" \
+            -o "$ipa_name" \
             -f "$TWEAK_PATH" \
-            -n "${{ inputs.display_name }}" \
-            -b "${{ steps.resolve.outputs.bundle_id }}"
+            -n "$DISPLAY_NAME" \
+            -b "$bundle_id"
+
+          echo "IPA_NAME=$ipa_name" >> "$GITHUB_ENV"
 
       - name: Create a Draft Release
         env:
           GH_TOKEN: ${{ github.token }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
         run: |
           i=1
           while gh release view "x-ipa${i}" --repo "$GITHUB_REPOSITORY" &>/dev/null; do
@@ -130,13 +130,16 @@ jobs:
           done
           gh release create "x-ipa${i}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "${{ inputs.display_name }}_${{ env.APP_VERSION }}" \
+            --title "${DISPLAY_NAME}_${APP_VERSION}" \
             --draft \
-            ${{ inputs.display_name }}_${{ env.APP_VERSION }}.ipa
+            "$IPA_NAME"
 
-      - name: Job Summary - Build Complete
-        run: echo -e '### 🛠️ Build IPA Complete!' >> $GITHUB_STEP_SUMMARY
-
-      - name: Job Summary - Output the Draft Release Link
+      - name: Job Summary
         run: |
-          echo -e "### 🚀 Draft Release\n\nDraft release has been created successfully! You can view your release here: https://github.com/${{ github.repository }}/releases" >> $GITHUB_STEP_SUMMARY
+          {
+            echo '### 🛠️ Build IPA Complete!'
+            echo
+            echo '### 🚀 Draft Release'
+            echo
+            echo "Draft release has been created successfully! You can view your release here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases"
+          } >> "$GITHUB_STEP_SUMMARY"

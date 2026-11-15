@@ -1,4 +1,4 @@
-# XEnhancer 1.0.0
+# XEnhancer 1.0.1
 A simple X (Twitter) iOS Tweak made by [@ZeroxDeadBeef](https://t.me/ZeroxDeadBeef)
 
 The first public release, bringing major improvements to privacy, customization, media, and the overall X experience.
@@ -15,34 +15,18 @@ The first public release, bringing major improvements to privacy, customization,
 - And more than 50+ features.
 
 ### Changelogs:
-- Hide ads, Premium prompts, and unnecessary UI elements.
-- Download videos and original photos in the highest available quality.
-- Advanced Account & Post Info (OSINT) with export .
-- Ghost Mode, telemetry blocking, and enhanced privacy controls.
-- Improved messaging features and media handling.
-- Device Privacy Profile
- - Control the device identity, network, and web values exposed inside X. Support auto rotation each launch.
-- System Fingerprint Overrides generated processor, memory, thermal, and battery values.
-- PRIVATE ACCESS
-- Isolate Clipboard
-- Give X a private general pasteboard instead of the system clipboard.
-- Hide Keyboard Languages
-- Prevent X from enumerating active keyboard input modes.
-- Hide iCloud Identity
-- Return no iCloud ubiquity identity token to X.
-- Block App Probing
-- Block custom URL-scheme availability checks while preserving web links.
- - (Will block X from read your installed apps.)
-- Block Motion Sensors
-- Report motion and altitude sensors unavailable and suppress confirmed motio...
-- Hide Carrier Identity
-- Hide carrier codes and radio-access details read by X and its identity SDKs.
-- Block Advertising ID
-- Return the system zero advertising identifier and report tracking disabled.
-- Settings backup, App Containers, diagnostics, and maintenance tools.
-- Improved stability, compatibility, and overall performance.
+- Advanced Media & Downloads: Broadcast downloads and recording, Space audio downloads and recording, multi-media downloads, quality selection, quoted post media, captions, and an enhanced Download Manager.
+- Space OSINT: New OSINT capabilities for Spaces, providing additional information and insights.
+- Timeline & UI Customization: Feed Filters & Presets, Home customization, visibility controls, Change X timeline logo with img or gif and additional interface options.
+- Post & Content Tools: Post Export, expanded post controls, Home “Videos for you” filtering, and other timeline refinements.
+- Account Management: Per-account settings, independent preferences, and in-app Web Login.
+- Backup & Configuration: Expanded Settings Backup and Restore, including account profiles, presets, tab configurations, and preferences.
+- Privacy & Reliability: Improved tracking cleanup, expanded-link routing, Post and Reply composer while sending through your signed-in web session on background, and compatibility improvements.
+- Localization: Updated translations across 29 languages.
+- Much more…
 ### Known issues:
 
-- Some features may be affected by recent X updates and will be improved in upcoming releases.
+- 
+Some features may be affected by recent X updates. Media and compatibility-sensitive features depend on supported X implementations and formats.
 
 - Full changelog in [@ZeroxDeadBeef](https://t.me/ZeroxDeadBeef)
